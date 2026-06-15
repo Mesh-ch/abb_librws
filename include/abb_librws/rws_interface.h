@@ -893,6 +893,16 @@ public:
     rws_client_.setHTTPTimeout(timeout);
   }
 
+  /**
+   * \brief A method for setting the Robot Web Services protocol version.
+   *
+   * \param rws_version protocol version label ("rws1" or "rws2").
+   */
+  void setRWSVersion(const std::string& rws_version)
+  {
+    rws_client_.setRWSVersion(rws_version);
+  }
+
 protected:
   /**
    * \brief A method for comparing a single text content (from a XML document node) with a specific string value.

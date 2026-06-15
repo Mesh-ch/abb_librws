@@ -23,7 +23,7 @@ endif()
 ## POCO C++ Libraries ##
 ########################
 # We need at least 1.4.3 because of WebSocket support.
-find_package(Poco 1.4.3 REQUIRED COMPONENTS Foundation Net Util XML)
+find_package(Poco 1.4.3 REQUIRED COMPONENTS Foundation Net NetSSL Util XML)
 
 ###########
 ## Build ##
@@ -56,6 +56,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 target_link_libraries(${PROJECT_NAME} PUBLIC
   ${Poco_LIBRARIES}
+  PocoNetSSL
 )
 
 if(NOT BUILD_SHARED_LIBS)

@@ -39,6 +39,7 @@
 
 #include "Poco/Mutex.h"
 #include "Poco/Net/HTTPClientSession.h"
+#include "Poco/Net/HTTPSClientSession.h"
 #include "Poco/Net/HTTPCredentials.h"
 #include "Poco/Net/HTTPResponse.h"
 #include "Poco/Net/WebSocket.h"
@@ -253,19 +254,35 @@ public:
   POCOClient(const std::string& ip_address,
              const Poco::UInt16 port,
              const std::string& username,
-             const std::string& password)
-  :
-  http_client_session_(ip_address, port),
-  http_credentials_(username, password)
-  {
-    http_client_session_.setKeepAlive(true);
-    http_client_session_.setTimeout(Poco::Timespan(DEFAULT_HTTP_TIMEOUT));
-  }
+             const std::string& password);
 
   /**
    * \brief A destructor.
    */
   ~POCOClient() {}
+
+  /**
+   * \brief Set Robot Web Services protocol version.
+   *
+   * Supported values are "rws1" and "rws2".
+   * Any other value falls back to "rws1".
+   *
+   * \param rws_version Protocol version label.
+   */
+  void setRWSVersion(const std::string& rws_version)
+  {
+    rws_version_ = (rws_version == "rws2" ? "rws2" : "rws1");
+  }
+
+  /**
+   * \brief Check if RWS2 mode is selected.
+   *
+   * \return true if protocol version is set to RWS2.
+   */
+  bool isRWS2() const
+  {
+    return rws_version_ == "rws2";
+  }
 
   /**
    * \brief A method for sending a HTTP GET request.
@@ -316,8 +333,8 @@ public:
    */
   void setHTTPTimeout(const Poco::Int64 timeout)
   {
-    http_client_session_.setTimeout(Poco::Timespan(timeout));
-    http_client_session_.reset();
+    http_client_session_->setTimeout(Poco::Timespan(timeout));
+    http_client_session_->reset();
   }
 
   /**
@@ -459,12 +476,27 @@ private:
   /**
    * \brief A HTTP client session.
    */
-  Poco::Net::HTTPClientSession http_client_session_;
+  Poco::SharedPtr<Poco::Net::HTTPClientSession> http_client_session_;
 
   /**
    * \brief HTTP credentials for the remote server's access authentication process.
    */
   Poco::Net::HTTPCredentials http_credentials_;
+
+  /**
+   * \brief Username for HTTP authentication.
+   */
+  std::string username_;
+
+  /**
+   * \brief Password for HTTP authentication.
+   */
+  std::string password_;
+
+  /**
+   * \brief Selected Robot Web Services protocol version.
+   */
+  std::string rws_version_{"rws1"};
 
   /**
    * \brief A container for cookies received from a server.

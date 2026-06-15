@@ -36,8 +36,12 @@
 
 #include <sstream>
 
+#include "Poco/Base64Encoder.h"
+#include "Poco/Net/AcceptCertificateHandler.h"
+#include "Poco/Net/Context.h"
 #include "Poco/Net/HTTPRequest.h"
 #include "Poco/Net/NetException.h"
+#include "Poco/Net/SSLManager.h"
 #include "Poco/StreamCopier.h"
 
 #include "abb_librws/rws_poco_client.h"
@@ -49,6 +53,46 @@ namespace abb
 {
 namespace rws
 {
+namespace
+{
+std::string makeBasicAuthorization(const std::string& username, const std::string& password)
+{
+  std::ostringstream encoded_stream;
+  Poco::Base64Encoder encoder(encoded_stream);
+  encoder << username << ":" << password;
+  encoder.close();
+
+  std::string encoded = encoded_stream.str();
+  while (!encoded.empty() && (encoded.back() == '\n' || encoded.back() == '\r'))
+  {
+    encoded.pop_back();
+  }
+
+  return "Basic " + encoded;
+}
+
+void ensureSSLInitialized()
+{
+  static bool initialized = false;
+  if (!initialized)
+  {
+    Poco::Net::initializeSSL();
+    Poco::SharedPtr<Poco::Net::InvalidCertificateHandler> cert_handler =
+      new Poco::Net::AcceptCertificateHandler(false);
+    Poco::Net::Context::Ptr context = new Poco::Net::Context(Poco::Net::Context::CLIENT_USE,
+                                                              "",
+                                                              "",
+                                                              "",
+                                                              Poco::Net::Context::VERIFY_NONE,
+                                                              9,
+                                                              true,
+                                                              "ALL");
+    Poco::Net::SSLManager::instance().initializeClient(nullptr, cert_handler, context);
+    initialized = true;
+  }
+}
+}  // namespace
+
 /***********************************************************************************************************************
  * Struct definitions: POCOClient::POCOResult
  */
@@ -213,6 +257,23 @@ std::string POCOClient::POCOResult::toString(const bool verbose, const size_t in
  * Primary methods
  */
 
+POCOClient::POCOClient(const std::string& ip_address,
+                       const Poco::UInt16 port,
+                       const std::string& username,
+                       const std::string& password)
+:
+http_client_session_(port == 443 ?
+  (ensureSSLInitialized(),
+   static_cast<Poco::Net::HTTPClientSession*>(new Poco::Net::HTTPSClientSession(ip_address, port))) :
+  static_cast<Poco::Net::HTTPClientSession*>(new Poco::Net::HTTPClientSession(ip_address, port))),
+http_credentials_(username, password),
+username_(username),
+password_(password)
+{
+  http_client_session_->setKeepAlive(true);
+  http_client_session_->setTimeout(Poco::Timespan(DEFAULT_HTTP_TIMEOUT));
+}
+
 POCOClient::POCOResult POCOClient::httpGet(const std::string& uri)
 {
   return makeHTTPRequest(HTTPRequest::HTTP_GET, uri);
@@ -248,9 +309,15 @@ POCOClient::POCOResult POCOClient::makeHTTPRequest(const std::string& method,
   HTTPRequest request(method, uri, HTTPRequest::HTTP_1_1);
   request.setCookies(cookies_);
   request.setContentLength(content.length());
+  if (rws_version_ == "rws2")
+  {
+    request.set("Accept", "application/xhtml+xml;v=2.0");
+    request.set("Authorization", makeBasicAuthorization(username_, password_));
+  }
   if (method == HTTPRequest::HTTP_POST || !content.empty())
   {
-    request.setContentType("application/x-www-form-urlencoded");
+    request.setContentType(rws_version_ == "rws2" ? "application/x-www-form-urlencoded;v=2.0" :
+                                                   "application/x-www-form-urlencoded");
   }
 
   // Attempt the communication.
@@ -276,7 +343,7 @@ POCOClient::POCOResult POCOClient::makeHTTPRequest(const std::string& method,
     // Check if there was a server error, if so, make another attempt with a clean sheet.
     if (response.getStatus() >= HTTPResponse::HTTP_INTERNAL_SERVER_ERROR)
     {
-      http_client_session_.reset();
+      http_client_session_->reset();
       request.erase(HTTPRequest::COOKIE);
       sendAndReceive(result, request, response, content);
     }
@@ -308,7 +375,7 @@ POCOClient::POCOResult POCOClient::makeHTTPRequest(const std::string& method,
   if (result.status != POCOResult::OK)
   {
     cookies_.clear();
-    http_client_session_.reset();
+    http_client_session_->reset();
   }
 
   return result;
@@ -342,7 +409,7 @@ POCOClient::POCOResult POCOClient::webSocketConnect(const std::string& uri,
       ScopedLock<Mutex> connect_lock(websocket_connect_mutex_);
       ScopedLock<Mutex> use_lock(websocket_use_mutex_);
 
-      p_websocket_ = new WebSocket(http_client_session_, request, response);
+      p_websocket_ = new WebSocket(*http_client_session_, request, response);
       p_websocket_->setReceiveTimeout(Poco::Timespan(timeout));
     }
 
@@ -372,7 +439,7 @@ POCOClient::POCOResult POCOClient::webSocketConnect(const std::string& uri,
 
   if (result.status != POCOResult::OK)
   {
-    http_client_session_.reset();
+    http_client_session_->reset();
   }
 
   return result;
@@ -454,7 +521,7 @@ POCOClient::POCOResult POCOClient::webSocketReceiveFrame()
 
   if (result.status != POCOResult::OK)
   {
-    http_client_session_.reset();
+    http_client_session_->reset();
   }
 
   return result;
@@ -494,8 +561,8 @@ void POCOClient::sendAndReceive(POCOResult& result,
 
   // Contact the server.
   std::string response_content;
-  http_client_session_.sendRequest(request) << request_content;
-  StreamCopier::copyToString(http_client_session_.receiveResponse(response), response_content);
+  http_client_session_->sendRequest(request) << request_content;
+  StreamCopier::copyToString(http_client_session_->receiveResponse(response), response_content);
 
   // Add response info to the result.
   result.addHTTPResponseInfo(response, response_content);

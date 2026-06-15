@@ -288,7 +288,7 @@ RWSClient::RWSResult RWSClient::getSpeedRatio()
 
 RWSClient::RWSResult RWSClient::getPanelControllerState()
 {
-  std::string uri = Resources::RW_PANEL_CTRLSTATE;
+  std::string uri = isRWS2() ? "/rw/panel/ctrl-state" : Resources::RW_PANEL_CTRLSTATE;
 
   EvaluationConditions evaluation_conditions;
   evaluation_conditions.parse_message_into_xml = true;
@@ -326,28 +326,49 @@ RWSClient::RWSResult RWSClient::getRAPIDSymbolData(const RAPIDResource& resource
 
   if (p_data)
   {
-    RWSResult temp_result = getRAPIDSymbolProperties(resource);
-
-    if (temp_result.success)
+    if (isRWS2())
     {
-      data_type = xmlFindTextContent(temp_result.p_xml_document, XMLAttributes::CLASS_DATTYP);
-
-      if (p_data->getType().compare(data_type) == 0)
+      result = getRAPIDSymbolData(resource);
+      if (result.success)
       {
-        result = getRAPIDSymbolData(resource);
+        std::string value = xmlFindTextContent(result.p_xml_document, XMLAttributes::CLASS_VALUE);
 
-        if (result.success)
+        if (!value.empty())
         {
-          std::string value = xmlFindTextContent(result.p_xml_document, XMLAttributes::CLASS_VALUE);
+          p_data->parseString(value);
+        }
+        else
+        {
+          result.success = false;
+          result.error_message = "getRAPIDSymbolData(...): RAPID value string was empty";
+        }
+      }
+    }
+    else
+    {
+      RWSResult temp_result = getRAPIDSymbolProperties(resource);
 
-          if (!value.empty())
+      if (temp_result.success)
+      {
+        data_type = xmlFindTextContent(temp_result.p_xml_document, XMLAttributes::CLASS_DATTYP);
+
+        if (p_data->getType().compare(data_type) == 0)
+        {
+          result = getRAPIDSymbolData(resource);
+
+          if (result.success)
           {
-            p_data->parseString(value);
-          }
-          else
-          {
-            result.success = false;
-            result.error_message = "getRAPIDSymbolData(...): RAPID value string was empty";
+            std::string value = xmlFindTextContent(result.p_xml_document, XMLAttributes::CLASS_VALUE);
+
+            if (!value.empty())
+            {
+              p_data->parseString(value);
+            }
+            else
+            {
+              result.success = false;
+              result.error_message = "getRAPIDSymbolData(...): RAPID value string was empty";
+            }
           }
         }
       }
@@ -370,24 +391,28 @@ RWSClient::RWSResult RWSClient::getRAPIDSymbolProperties(const RAPIDResource& re
 
 RWSClient::RWSResult RWSClient::setIOSignal(const std::string& iosignal, const std::string& value)
 {
-  std::string uri = generateIOSignalPath(iosignal) + "?" + Queries::ACTION_SET;
+  std::string uri = isRWS2() ? generateIOSignalPath(iosignal) + "/set-value?mastership=implicit" :
+                               generateIOSignalPath(iosignal) + "?" + Queries::ACTION_SET;
   std::string content = Identifiers::LVALUE + "=" + value;
 
   EvaluationConditions evaluation_conditions;
   evaluation_conditions.parse_message_into_xml = false;
   evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_NO_CONTENT);
+  evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_OK);
 
   return evaluatePOCOResult(httpPost(uri, content), evaluation_conditions);
 }
 
 RWSClient::RWSResult RWSClient::setRAPIDSymbolData(const RAPIDResource& resource, const std::string& data)
 {
-  std::string uri = generateRAPIDDataPath(resource) + "?" + Queries::ACTION_SET;
+  std::string uri = isRWS2() ? generateRAPIDDataPath(resource) + "?mastership=implicit" :
+                               generateRAPIDDataPath(resource) + "?" + Queries::ACTION_SET;
   std::string content = Identifiers::VALUE + "=" + data;
 
   EvaluationConditions evaluation_conditions;
   evaluation_conditions.parse_message_into_xml = false;
   evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_NO_CONTENT);
+  evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_OK);
 
   return evaluatePOCOResult(httpPost(uri, content), evaluation_conditions);
 }
@@ -399,59 +424,69 @@ RWSClient::RWSResult RWSClient::setRAPIDSymbolData(const RAPIDResource& resource
 
 RWSClient::RWSResult RWSClient::startRAPIDExecution()
 {
-  std::string uri = Resources::RW_RAPID_EXECUTION + "?" + Queries::ACTION_START;
+  std::string uri = isRWS2() ? "/rw/rapid/execution/start?mastership=implicit" :
+                               Resources::RW_RAPID_EXECUTION + "?" + Queries::ACTION_START;
   std::string content = "regain=continue&execmode=continue&cycle=forever&condition=none&stopatbp=disabled&alltaskbytsp=false";
 
   EvaluationConditions evaluation_conditions;
   evaluation_conditions.parse_message_into_xml = false;
   evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_NO_CONTENT);
+  evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_OK);
 
   return evaluatePOCOResult(httpPost(uri, content), evaluation_conditions);
 }
 
 RWSClient::RWSResult RWSClient::stopRAPIDExecution()
 {
-  std::string uri = Resources::RW_RAPID_EXECUTION + "?" + Queries::ACTION_STOP;
+  std::string uri = isRWS2() ? "/rw/rapid/execution/stop?mastership=implicit" :
+                               Resources::RW_RAPID_EXECUTION + "?" + Queries::ACTION_STOP;
   std::string content = "stopmode=stop";
 
   EvaluationConditions evaluation_conditions;
   evaluation_conditions.parse_message_into_xml = false;
   evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_NO_CONTENT);
+  evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_OK);
 
   return evaluatePOCOResult(httpPost(uri, content), evaluation_conditions);
 }
 
 RWSClient::RWSResult RWSClient::resetRAPIDProgramPointer()
 {
-  std::string uri = Resources::RW_RAPID_EXECUTION + "?" + Queries::ACTION_RESETPP;
+  std::string uri = isRWS2() ? "/rw/rapid/execution/resetpp?mastership=implicit" :
+                               Resources::RW_RAPID_EXECUTION + "?" + Queries::ACTION_RESETPP;
 
   EvaluationConditions evaluation_conditions;
   evaluation_conditions.parse_message_into_xml = false;
   evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_NO_CONTENT);
+  evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_OK);
 
   return evaluatePOCOResult(httpPost(uri), evaluation_conditions);
 }
 
 RWSClient::RWSResult RWSClient::setMotorsOn()
 {
-  std::string uri = Resources::RW_PANEL_CTRLSTATE + "?" + Queries::ACTION_SETCTRLSTATE;
+  std::string uri = isRWS2() ? "/rw/panel/ctrl-state?mastership=implicit" :
+                               Resources::RW_PANEL_CTRLSTATE + "?" + Queries::ACTION_SETCTRLSTATE;
   std::string content = "ctrl-state=motoron";
 
   EvaluationConditions evaluation_conditions;
   evaluation_conditions.parse_message_into_xml = false;
   evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_NO_CONTENT);
+  evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_OK);
 
   return evaluatePOCOResult(httpPost(uri, content), evaluation_conditions);
 }
 
 RWSClient::RWSResult RWSClient::setMotorsOff()
 {
-  std::string uri = Resources::RW_PANEL_CTRLSTATE + "?" + Queries::ACTION_SETCTRLSTATE;
+  std::string uri = isRWS2() ? "/rw/panel/ctrl-state?mastership=implicit" :
+                               Resources::RW_PANEL_CTRLSTATE + "?" + Queries::ACTION_SETCTRLSTATE;
   std::string content = "ctrl-state=motoroff";
 
   EvaluationConditions evaluation_conditions;
   evaluation_conditions.parse_message_into_xml = false;
   evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_NO_CONTENT);
+  evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_OK);
 
   return evaluatePOCOResult(httpPost(uri, content), evaluation_conditions);
 }
@@ -464,12 +499,14 @@ RWSClient::RWSResult RWSClient::setSpeedRatio(unsigned int ratio)
   ss << ratio;
   if(ss.fail()) throw std::runtime_error(EXCEPTION_CREATE_STRING);
 
-  std::string uri = "/rw/panel/speedratio?action=setspeedratio";
+  std::string uri = isRWS2() ? "/rw/panel/speedratio?mastership=implicit" :
+                               "/rw/panel/speedratio?action=setspeedratio";
   std::string content = "speed-ratio=" + ss.str();
 
   EvaluationConditions evaluation_conditions;
   evaluation_conditions.parse_message_into_xml = false;
   evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_NO_CONTENT);
+  evaluation_conditions.accepted_outcomes.push_back(HTTPResponse::HTTP_OK);
 
   return evaluatePOCOResult(httpPost(uri, content), evaluation_conditions);
 }
@@ -785,6 +822,11 @@ std::string RWSClient::generateMechanicalUnitPath(const std::string& mechunit)
 
 std::string RWSClient::generateRAPIDDataPath(const RAPIDResource& resource)
 {
+  if (isRWS2())
+  {
+    return "/rw/rapid/symbol/RAPID/" + resource.task + "/" + resource.module + "/" + resource.name + "/data";
+  }
+
   return Resources::RW_RAPID_SYMBOL_DATA_RAPID + "/" + resource.task + "/" + resource.module + "/" + resource.name;
 }
 

@@ -57,6 +57,19 @@ typedef SystemConstants::RAPID RAPID;
 typedef SystemConstants::RWS::Identifiers Identifiers;
 typedef SystemConstants::RWS::XMLAttributes XMLAttributes;
 
+static std::vector<Poco::XML::Node*> findCFGAttributeNodes(Poco::XML::Node* p_root)
+{
+  auto attributes = xmlFindNodes(p_root, XMLAttributes::CLASS_CFG_IA_T_LI);
+
+  // RW7 uses the class name 'cfg-ia-t' instead of 'cfg-ia-t-li'.
+  if(attributes.empty())
+  {
+    attributes = xmlFindNodes(p_root, XMLAttribute{Identifiers::CLASS, "cfg-ia-t"});
+  }
+
+  return attributes;
+}
+
 /***********************************************************************************************************************
  * Class definitions: RWSInterface
  */
@@ -101,7 +114,7 @@ std::vector<cfg::moc::Arm> RWSInterface::getCFGArms()
 
   for(size_t i = 0; i < instances.size(); ++i)
   {
-    std::vector<Poco::XML::Node*> attributes = xmlFindNodes(instances[i], XMLAttributes::CLASS_CFG_IA_T_LI);
+    std::vector<Poco::XML::Node*> attributes = findCFGAttributeNodes(instances[i]);
 
     cfg::moc::Arm arm;
 
@@ -145,7 +158,7 @@ std::vector<cfg::moc::Joint> RWSInterface::getCFGJoints()
 
   for(size_t i = 0; i < instances.size(); ++i)
   {
-    std::vector<Poco::XML::Node*> attributes = xmlFindNodes(instances[i], XMLAttributes::CLASS_CFG_IA_T_LI);
+    std::vector<Poco::XML::Node*> attributes = findCFGAttributeNodes(instances[i]);
 
     cfg::moc::Joint joint;
 
@@ -200,7 +213,7 @@ std::vector<cfg::moc::MechanicalUnit> RWSInterface::getCFGMechanicalUnits()
 
   for(size_t i = 0; i < instances.size(); ++i)
   {
-    std::vector<Poco::XML::Node*> attributes = xmlFindNodes(instances[i], XMLAttributes::CLASS_CFG_IA_T_LI);
+    std::vector<Poco::XML::Node*> attributes = findCFGAttributeNodes(instances[i]);
 
     cfg::moc::MechanicalUnit mechanical_unit;
 
@@ -229,6 +242,12 @@ std::vector<cfg::moc::MechanicalUnit> RWSInterface::getCFGMechanicalUnits()
       }
     }
 
+    // RW7 may expose the unit identifier in the cfg instance title instead of a 'name' attribute.
+    if (mechanical_unit.name.empty())
+    {
+      mechanical_unit.name = xmlNodeGetAttributeValue(instances[i], Identifiers::TITLE);
+    }
+
     result.push_back(mechanical_unit);
   }
 
@@ -248,7 +267,7 @@ std::vector<cfg::sys::MechanicalUnitGroup> RWSInterface::getCFGMechanicalUnitGro
 
   for(size_t i = 0; i < instances.size(); ++i)
   {
-    std::vector<Poco::XML::Node*> attributes = xmlFindNodes(instances[i], XMLAttributes::CLASS_CFG_IA_T_LI);
+    std::vector<Poco::XML::Node*> attributes = findCFGAttributeNodes(instances[i]);
 
     cfg::sys::MechanicalUnitGroup mechanical_unit_group;
 
@@ -296,7 +315,7 @@ std::vector<cfg::sys::PresentOption> RWSInterface::getCFGPresentOptions()
 
   for(size_t i = 0; i < instances.size(); ++i)
   {
-    std::vector<Poco::XML::Node*> attributes = xmlFindNodes(instances[i], XMLAttributes::CLASS_CFG_IA_T_LI);
+    std::vector<Poco::XML::Node*> attributes = findCFGAttributeNodes(instances[i]);
 
     cfg::sys::PresentOption present_option;
 
@@ -333,7 +352,7 @@ std::vector<cfg::moc::Robot> RWSInterface::getCFGRobots()
 
   for(size_t i = 0; i < instances.size(); ++i)
   {
-    std::vector<Poco::XML::Node*> attributes = xmlFindNodes(instances[i], XMLAttributes::CLASS_CFG_IA_T_LI);
+    std::vector<Poco::XML::Node*> attributes = findCFGAttributeNodes(instances[i]);
 
     cfg::moc::Robot robot;
 
@@ -431,7 +450,7 @@ std::vector<cfg::moc::Single> RWSInterface::getCFGSingles()
 
   for(size_t i = 0; i < instances.size(); ++i)
   {
-    std::vector<Poco::XML::Node*> attributes = xmlFindNodes(instances[i], XMLAttributes::CLASS_CFG_IA_T_LI);
+    std::vector<Poco::XML::Node*> attributes = findCFGAttributeNodes(instances[i]);
 
     cfg::moc::Single single;
 
@@ -524,7 +543,7 @@ std::vector<cfg::moc::Transmission> RWSInterface::getCFGTransmission()
 
   for(size_t i = 0; i < instances.size(); ++i)
   {
-    std::vector<Poco::XML::Node*> attributes = xmlFindNodes(instances[i], XMLAttributes::CLASS_CFG_IA_T_LI);
+    std::vector<Poco::XML::Node*> attributes = findCFGAttributeNodes(instances[i]);
 
     cfg::moc::Transmission transmission;
 
@@ -555,7 +574,7 @@ std::vector<RWSInterface::RobotWareOptionInfo> RWSInterface::getPresentRobotWare
   RWSClient::RWSResult rws_result = rws_client_.getConfigurationInstances(Identifiers::SYS,
                                                                           Identifiers::PRESENT_OPTIONS);
 
-  std::vector<Poco::XML::Node*> node_list = xmlFindNodes(rws_result.p_xml_document, XMLAttributes::CLASS_CFG_IA_T_LI);
+  std::vector<Poco::XML::Node*> node_list = findCFGAttributeNodes(rws_result.p_xml_document);
 
   for (size_t i = 0; i < node_list.size(); i+=2)
   {
@@ -911,6 +930,10 @@ RWSInterface::SystemInfo RWSInterface::getSystemInfo()
   RWSClient::RWSResult rws_result = rws_client_.getRobotWareSystem();
 
   std::vector<Poco::XML::Node*> node_list = xmlFindNodes(rws_result.p_xml_document, XMLAttributes::CLASS_SYS_SYSTEM_LI);
+  if (node_list.empty())
+  {
+    node_list = xmlFindNodes(rws_result.p_xml_document, XMLAttribute("class", "sys-system"));
+  }
   for (size_t i = 0; i < node_list.size(); ++i)
   {
     result.system_name = xmlFindTextContent(node_list.at(i), XMLAttributes::CLASS_NAME);
@@ -918,6 +941,10 @@ RWSInterface::SystemInfo RWSInterface::getSystemInfo()
   }
 
   node_list = xmlFindNodes(rws_result.p_xml_document, XMLAttributes::CLASS_SYS_OPTION_LI);
+  if (node_list.empty())
+  {
+    node_list = xmlFindNodes(rws_result.p_xml_document, XMLAttribute("class", "sys-option"));
+  }
   for (size_t i = 0; i < node_list.size(); ++i)
   {
     result.system_options.push_back(xmlFindTextContent(node_list.at(i), XMLAttributes::CLASS_OPTION));
